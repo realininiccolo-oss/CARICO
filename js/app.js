@@ -1,6 +1,7 @@
 import { S, save, uid, today, addDays, foto, shrink, replaceAll } from './store.js';
 import * as P from './plan.js';
 import * as ritmo from './ritmo.js';
+import * as N from './notifiche.js';
 
 /* ---------- utilità ---------- */
 const $ = (s) => document.querySelector(s);
@@ -25,6 +26,7 @@ const ICON = {
   focus: '<path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/><circle cx="12" cy="12" r="2.5"/>', list: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
   equal: '<path d="M6 9.5h12M6 14.5h12"/>', flag: '<path d="M6 21V4M6 4h11l-2 4 2 4H6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', dumb: '<path d="M3 9.5h2.5m13 0H21M3 14.5h2.5m13 0H21"/><rect x="5.5" y="6.5" width="3.5" height="11" rx="1"/><rect x="15" y="6.5" width="3.5" height="11" rx="1"/><path d="M9 12h6"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
 };
 const ic = (n) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.innerHTML = ICON[n]; return s; };
@@ -177,7 +179,7 @@ function liveEx(e) {
   const n = Math.max(1, Number(e.serie) || 3);
   const lib = (S.libreria || []).find((l) => norm(l.nome) === norm(e.nome));
   const tipo = P.tipoDi({ ...e, tipo: e.tipo || (lib && lib.tipo) }), { su, ...val } = P.proposta({ ...e, tipo });
-  return { id: uid('x'), esId: e.id || null, nome: e.nome, tipo, reps: e.reps || '', rec: Number(e.rec ?? 90), passo: Number(e.passo || (lib && lib.passo)) || 2.5, note: e.note || '', su,
+  return { id: uid('x'), esId: e.id || null, nome: e.nome, tipo, ss: e.ss || null, reps: e.reps || '', rec: Number(e.rec ?? 90), passo: Number(e.passo || (lib && lib.passo)) || 2.5, note: e.note || '', su,
     serie: Array.from({ length: n }, () => ({ ...val, ok: null })) };
 }
 function renderLive(v) {
@@ -199,16 +201,40 @@ function renderLive(v) {
 
 /* L'esercizio aperto: quello toccato, altrimenti il primo non finito. */
 const isDone = (e) => e.serie.length > 0 && e.serie.every((x) => x.ok);
+/* Superserie: esercizi vicini con lo stesso `ss` si fanno a giro (A1 → B1 → recupero → A2 → B2…). */
+function blocchi(list) {
+  const out = [];
+  list.forEach((e, k) => { if (k && e.ss && list[k - 1].ss === e.ss) out[out.length - 1].push(e); else out.push([e]); });
+  return out;
+}
+const primaLibera = (e) => e.serie.findIndex((x) => !x.ok);
+function passoIn(b) { // prossimo esercizio da fare dentro un blocco
+  const giri = Math.max(...b.map((e) => e.serie.length));
+  for (let r = 0; r < giri; r++) for (const e of b) if (e.serie[r] && !e.serie[r].ok) return e;
+  return null;
+}
+const bloccoDi = (e) => blocchi(S.live.esercizi).find((b) => b.includes(e)) || [e];
 function activeEx() {
   const L = S.live, f = L.esercizi.find((e) => e.id === L.focus);
-  return f && !isDone(f) ? f : L.esercizi.find((e) => !isDone(e)) || null;
+  if (f && !isDone(f)) { const x = passoIn(bloccoDi(f)); if (x) return x; }
+  for (const b of blocchi(L.esercizi)) { const x = passoIn(b); if (x) return x; }
+  return null;
 }
+/* Unisce o divide la superserie tra l'esercizio i e il successivo. */
+function legaSS(list, i) {
+  const a = list[i], b = list[i + 1]; if (!b) return;
+  if (a.ss && a.ss === b.ss) { const old = a.ss, nuovo = uid('ss'); for (let k = i + 1; k < list.length && list[k].ss === old; k++) list[k].ss = nuovo; }
+  else { const id = a.ss || uid('ss'), old = b.ss; for (let k = i + 1; k < list.length && (k === i + 1 || (old && list[k].ss === old)); k++) list[k].ss = id; a.ss = id; }
+  list.forEach((e, k) => { if (e.ss && list[k - 1]?.ss !== e.ss && list[k + 1]?.ss !== e.ss) e.ss = null; });
+}
+const inSS = (list, k) => !!(list[k].ss && (list[k - 1]?.ss === list[k].ss || list[k + 1]?.ss === list[k].ss));
+const ssBtn = (list, k, after) => (list[k + 1] ? h('button', { class: 'mini' + (list[k].ss && list[k].ss === list[k + 1].ss ? ' on' : ''), onclick: (ev) => { ev.stopPropagation(); legaSS(list, k); after(); } }, ic('link'), list[k].ss && list[k].ss === list[k + 1].ss ? 'Superserie ✓' : 'Superserie') : null);
 /* Testo di una serie secondo il tipo: 62,5×10 · 15 rip · 45 s · 30′ · 5,2 km */
 function setTxt(e, x) {
   const t = P.tipoDi(e), n = (k) => num(x[k]) ?? 0;
   if (t === 'pesi') return `${kgf(n('kg'))}×${n('reps')}`;
   if (t === 'corpo') return `${n('reps')} rip`;
-  if (t === 'tempo') return `${n('sec')} s`;
+  if (t === 'tempo') return n('sec') >= 60 ? mmss(n('sec')) : `${n('sec')} s`;
   return [`${kgf(n('min'))}′`, n('km') ? `${kgf(n('km'))} km` : null, n('liv') ? `liv ${n('liv')}` : null].filter(Boolean).join(' · ');
 }
 const UNI = { kg: 'kg', reps: 'rip', sec: 's', min: 'min', km: 'km', liv: 'liv' };
@@ -262,7 +288,7 @@ function cronometro(e, i) {
   else tm.textContent = t === 'tempo' ? mmss(num(x.sec) ?? 0) : mmss((num(x.min) ?? 0) * 60);
   return h('div', { class: 'cron' + (C ? ' on' : '') }, ic('clock'), tm, h('button', { class: 'btn' + (C ? '' : ' sec2'), onclick: () => {
     unlockAudio();
-    if (!C) { L.cron = { ex: e.id, i, t0: Date.now() }; L.riposo = null; commit(); return; }
+    if (!C) { L.cron = { ex: e.id, i, t0: Date.now() }; L.riposo = null; N.annulla(); commit(); return; }
     const sec = (Date.now() - C.t0) / 1000;
     if (t === 'tempo') x.sec = Math.round(sec); else x.min = Math.round((sec / 60) * 10) / 10;
     L.cron = null; commit();
@@ -281,7 +307,7 @@ const nSerie = (e) => h('div', { class: 'ns' },
   h('button', { 'aria-label': 'Una serie in meno', onclick: () => { const k = e.serie.map((x) => !x.ok).lastIndexOf(true); if (k >= 0 && e.serie.length > 1) { e.serie.splice(k, 1); commit(); } } }, ic('minus')),
   h('span', { class: 'num', text: `${e.serie.length} serie` }),
   h('button', { 'aria-label': 'Una serie in più', onclick: () => { const l = e.serie[e.serie.length - 1] || {}; const { ok, ...val } = l; e.serie.push({ ...val, ok: null }); commit(); } }, ic('plus')));
-const obiettivo = (e) => { const t = P.tipoDi(e); return e.reps ? `obiettivo ${e.reps}${{ tempo: ' s', cardio: ' min' }[t] || ''}` : null; };
+const obiettivo = (e) => { const t = P.tipoDi(e); if (!e.reps) return null; if (t === 'tempo' && P.lowReps(e.reps) >= 60) return `obiettivo ${mmss(P.lowReps(e.reps))}`; return `obiettivo ${e.reps}${{ tempo: ' s', cardio: ' min' }[t] || ''}`; };
 
 const chip = (e, i) => {
   const x = e.serie[i], c = P.confrontoSerie(e, i);
@@ -306,6 +332,7 @@ function riepilogoEs(e) {
   return out;
 }
 function exCard(e, ei, active) {
+  const ssb = ssBtn(S.live.esercizi, ei, commit), ssc = inSS(S.live.esercizi, ei) ? ' ss' : '';
   const done = isDone(e), cur = e.serie.findIndex((x) => !x.ok), fatte = e.serie.filter((x) => x.ok).length;
   const u = P.ultima(e), last = u ? u.serie.filter((x) => x.ok).map((x) => setTxt(e, x)).join(' · ') : null;
   const chips = e.serie.map((x, i) => (x.ok ? chip(e, i) : null)).filter(Boolean);
@@ -314,20 +341,20 @@ function exCard(e, ei, active) {
     active ? nSerie(e) : h('span', { class: 'prog num' + (done ? ' ok' : ''), text: done ? '' : `${fatte}/${e.serie.length}` }, done ? ic('check') : null));
   const togli = h('button', { class: 'mini', 'aria-label': 'Togli', onclick: () => { const s0 = snap(); S.live.esercizi.splice(ei, 1); commit(); undo('Esercizio tolto', s0); } }, ic('trash'));
 
-  if (!active && !done) return h('div', { class: 'ex mini-ex', onclick: () => { S.live.focus = e.id; commit(); } }, head, chips.length ? h('div', { class: 'chips2' }, chips) : null);
-  if (done) return h('div', { class: 'ex done', id: 'ex-' + e.id }, head, h('div', { class: 'chips2' }, chips), h('div', { class: 'fb' }, riepilogoEs(e)),
-    h('div', { class: 'ex-f' }, h('button', { class: 'mini', onclick: () => { const { ok, ...val } = e.serie[e.serie.length - 1]; e.serie.push({ ...val, ok: null }); S.live.focus = e.id; commit(); } }, ic('plus'), 'Serie'), h('span', { style: 'flex:1' }), togli));
+  if (!active && !done) return h('div', { class: 'ex mini-ex' + ssc, onclick: () => { S.live.focus = e.id; commit(); } }, head, chips.length ? h('div', { class: 'chips2' }, chips) : null, ssb ? h('div', { class: 'ex-f' }, ssb) : null);
+  if (done) return h('div', { class: 'ex done' + ssc, id: 'ex-' + e.id }, head, h('div', { class: 'chips2' }, chips), h('div', { class: 'fb' }, riepilogoEs(e)),
+    h('div', { class: 'ex-f' }, h('button', { class: 'mini', onclick: () => { const { ok, ...val } = e.serie[e.serie.length - 1]; e.serie.push({ ...val, ok: null }); S.live.focus = e.id; commit(); } }, ic('plus'), 'Serie'), ssb, h('span', { style: 'flex:1' }), togli));
 
-  const fb = S.live.fb && S.live.fb.ex === e.id ? P.confrontoSerie(e, S.live.fb.i) : null;
-  return h('div', { class: 'ex active', id: 'ex-' + e.id }, head,
+  const fx = S.live.fb && S.live.esercizi.find((y) => y.id === S.live.fb.ex), fb = fx && bloccoDi(fx).includes(e) ? P.confrontoSerie(fx, S.live.fb.i) : null;
+  return h('div', { class: 'ex active' + ssc, id: 'ex-' + e.id }, head,
     last ? h('div', { class: 'last num' }, h('span', { text: 'Ultima' }), last) : null,
     chips.length ? h('div', { class: 'chips2' }, chips) : null,
-    fb ? fbLine(fb) : null,
+    fb ? fbLine(fb, fx !== e ? fx.nome : null) : null,
     editorSerie(e, cur),
-    h('div', { class: 'ex-f' }, h('span', { style: 'flex:1' }),
+    h('div', { class: 'ex-f' }, ssb, h('span', { style: 'flex:1' }),
       ei > 0 ? h('button', { class: 'mini', 'aria-label': 'Su', onclick: () => { const a = S.live.esercizi; [a[ei - 1], a[ei]] = [a[ei], a[ei - 1]]; commit(); } }, ic('up')) : null, togli));
 }
-const fbLine = (fb) => h('div', { class: 'fbl flash ' + dirCl(fb.dir) }, fb.prima ? ic('flag') : dirIc(fb.dir), h('span', { text: `Serie ${S.live.fb.i + 1}` }), h('b', { text: fbTxt(fb) + (fb.rec ? ' · record' : '') }));
+const fbLine = (fb, nome) => h('div', { class: 'fbl flash ' + dirCl(fb.dir) }, fb.prima ? ic('flag') : dirIc(fb.dir), h('span', { text: `${nome ? nome + ' · ' : ''}Serie ${S.live.fb.i + 1}` }), h('b', { text: fbTxt(fb) + (fb.rec ? ' · record' : '') }));
 
 function serieFatta(e, i) {
   unlockAudio();
@@ -340,10 +367,12 @@ function serieFatta(e, i) {
   const { ok, ...val } = x;
   for (const y of e.serie.slice(i + 1)) if (!y.ok) Object.assign(y, val); // la serie dopo parte da questa
   L.fb = { ex: e.id, i };
-  const finito = isDone(e);
-  if (finito) L.focus = null;
-  const resta = L.esercizi.some((y) => !isDone(y)), rec = Number(e.rec) || 0;
-  L.riposo = rec > 0 && resta ? { fine: Date.now() + rec * 1000, tot: rec } : null;
+  const finito = isDone(e), dopo = passoIn(bloccoDi(e));
+  L.focus = dopo ? dopo.id : null;
+  const next = activeEx(), rec = Number(e.rec) || 0;
+  const subito = next && dopo === next && next !== e && primaLibera(next) === i; // superserie: niente pausa nel giro
+  L.riposo = rec > 0 && next && !subito ? { fine: Date.now() + rec * 1000, tot: rec } : null;
+  if (L.riposo) N.programma(rec, 'Recupero finito', `${next.nome} · serie ${primaLibera(next) + 1}`); else N.annulla();
   try { navigator.vibrate && navigator.vibrate(15); } catch (er) { /* niente */ }
   commit();
   if (L.vista === 'guida') { scrollTo(0, 0); return; }
@@ -383,18 +412,18 @@ function renderGuida(v) {
 function guidaLavoro(e) {
   const L = S.live, cur = e.serie.findIndex((x) => !x.ok), u = P.ultima(e);
   const prec = u ? u.serie.filter((x) => x.ok) : [], pu = prec.length ? prec[Math.min(cur, prec.length - 1)] : null;
-  const fb = L.fb && L.fb.ex === e.id ? P.confrontoSerie(e, L.fb.i) : null;
+  const fx = L.fb && L.esercizi.find((y) => y.id === L.fb.ex), fb = fx ? P.confrontoSerie(fx, L.fb.i) : null;
   const chips = e.serie.map((x, i) => (x.ok ? chip(e, i) : null)).filter(Boolean);
-  const idx = L.esercizi.indexOf(e);
+  const idx = L.esercizi.indexOf(e), blk = bloccoDi(e);
   return h('div', { class: 'glav' },
-    h('div', { class: 'gpos num', text: `Esercizio ${idx + 1} di ${L.esercizi.length}` }),
+    h('div', { class: 'gpos num' }, `Esercizio ${idx + 1} di ${L.esercizi.length}`, blk.length > 1 ? h('span', { class: 'chip acc' }, ic('link'), `Superserie ${blk.indexOf(e) + 1}/${blk.length}`) : null),
     h('div', { class: 'gname', text: e.nome }),
     h('div', { class: 'gsub' }, h('span', { class: 'num', text: [obiettivo(e), pu ? `l’ultima volta ${setTxt(e, pu)}` : 'prima volta'].filter(Boolean).join(' · ') }), nSerie(e)),
     chips.length ? h('div', { class: 'chips2' }, chips) : null,
-    fb ? fbLine(fb) : null,
+    fb ? fbLine(fb, fx !== e ? fx.nome : null) : null,
     editorSerie(e, cur),
     h('div', { class: 'glinks' },
-      h('button', { class: 'mini', onclick: () => { const nx = L.esercizi.find((y) => y !== e && !isDone(y)); if (nx) { L.focus = nx.id; commit(); } else toast('È l’ultimo esercizio'); } }, ic('skip'), 'Salta'),
+      h('button', { class: 'mini', onclick: () => { const nx = L.esercizi.find((y) => !blk.includes(y) && !isDone(y) && L.esercizi.indexOf(y) > idx) || L.esercizi.find((y) => !blk.includes(y) && !isDone(y)); if (nx) { L.focus = nx.id; commit(); } else toast('È l’ultimo esercizio'); } }, ic('skip'), 'Salta'),
       h('button', { class: 'mini', onclick: elencoEsercizi }, ic('list'), 'Esercizi'),
       h('button', { class: 'mini', onclick: addEsercizio }, ic('plus'), 'Aggiungi')));
 }
@@ -418,15 +447,16 @@ function guidaRiposo(e, R) {
     return h('div', { class: 'next' }, h('small', { text: R.via ? 'Si comincia con' : 'Prossima' }), h('b', { text: e.nome }),
       h('span', { class: 'num', text: `Serie ${cur + 1} di ${e.serie.length} · ${setTxt(e, e.serie[cur])}` }));
   })();
-  const sposta = (d) => { R.fine = Math.max(Date.now() + 1000, R.fine + d * 1000); R.tot = Math.max(R.tot + d, 1); save(); };
+  const avvisa = () => { if (!R.via && e) N.programma((R.fine - Date.now()) / 1000, 'Recupero finito', `${e.nome} · serie ${primaLibera(e) + 1}`); };
+  const sposta = (d) => { R.fine = Math.max(Date.now() + 1000, R.fine + d * 1000); R.tot = Math.max(R.tot + d, 1); save(); avvisa(); };
   return h('div', { class: 'grip' },
     h('div', { class: 'glab', text: R.via ? 'Si parte' : 'Recupero' }),
     h('div', { class: 'ringbox' }, svg, tm),
     h('div', { class: 'rbtn' },
       h('button', { class: 'btn sec2', onclick: () => sposta(-15) }, '−15'),
-      h('button', { class: 'btn', onclick: () => { L.riposo = null; commit(); } }, R.via ? 'Inizia ora' : 'Salta'),
+      h('button', { class: 'btn', onclick: () => { L.riposo = null; N.annulla(); commit(); } }, R.via ? 'Inizia ora' : 'Salta'),
       h('button', { class: 'btn sec2', onclick: () => sposta(15) }, '+15')),
-    fb ? h('div', { style: 'margin-top:16px' }, fbLine(fb)) : null,
+    fb ? h('div', { style: 'margin-top:16px' }, fbLine(fb, L.esercizi.find((y) => y.id === L.fb.ex).nome)) : null,
     dopo);
 }
 function elencoEsercizi() {
@@ -445,11 +475,11 @@ function syncLib() {
   const add = (e) => { if (e && e.nome && !has.has(norm(e.nome))) { has.add(norm(e.nome)); S.libreria.push({ id: uid('l'), nome: e.nome, tipo: P.tipoDi(e), serie: e.serie || 3, reps: e.reps || '', rec: e.rec ?? 90, passo: e.passo, note: e.note || '' }); } };
   S.scheda.giorni.forEach((g) => g.esercizi.forEach(add));
   S.sessioni.forEach((x) => x.esercizi.forEach((e) => add({ nome: e.nome, tipo: e.tipo, serie: e.serie.length, reps: e.reps, rec: e.rec })));
-  if (!S.preset) { // esercizi già pronti, una volta sola
-    [['Corsa', 'cardio', 1, '30', 0], ['Cyclette', 'cardio', 1, '30', 0], ['Tapis roulant', 'cardio', 1, '20', 0], ['Ellittica', 'cardio', 1, '20', 0], ['Vogatore', 'cardio', 1, '15', 0],
-      ['Plank', 'tempo', 3, '45', 60], ['Piegamenti', 'corpo', 3, '15', 60]].forEach(([nome, tipo, serie, reps, rec]) => add({ nome, tipo, serie, reps, rec }));
-    S.preset = 1;
-  }
+  const PRESET = [ // esercizi già pronti: [versione, nome, tipo, serie, obiettivo, recupero]
+    [1, 'Corsa', 'cardio', 1, '30', 0], [1, 'Cyclette', 'cardio', 1, '30', 0], [1, 'Tapis roulant', 'cardio', 1, '20', 0], [1, 'Ellittica', 'cardio', 1, '20', 0], [1, 'Vogatore', 'cardio', 1, '15', 0],
+    [1, 'Plank', 'tempo', 3, '45', 60], [1, 'Piegamenti', 'corpo', 3, '15', 60], [2, 'Allungamento', 'tempo', 1, '300', 0]];
+  PRESET.filter(([v]) => v > (S.preset || 0)).forEach(([, nome, tipo, serie, reps, rec]) => add({ nome, tipo, serie, reps, rec }));
+  S.preset = 2;
 }
 function libUpsert(x) {
   syncLib();
@@ -462,7 +492,7 @@ const searchBox = (q) => h('div', { class: 'searchbox' }, ic('search'), q);
 const exInfo = (e) => {
   const t = P.tipoDi(e), r = e.reps || '–';
   if (t === 'cardio') return `Cardio · ${r} min`;
-  if (t === 'tempo') return `${e.serie} × ${r} s · ${e.rec}s`;
+  if (t === 'tempo') return `${e.serie} × ${P.lowReps(r) >= 60 ? mmss(P.lowReps(r)) : r + ' s'}${e.rec ? ` · ${e.rec}s` : ''}`;
   return `${e.serie} × ${r}${t === 'corpo' ? ' · corpo libero' : ''} · ${e.rec}s`;
 };
 /* Scelta del tipo in un modulo: Pesi, Corpo libero, A tempo, Cardio. */
@@ -544,16 +574,17 @@ function addAllenamento() {
 function builder(b) {
   const nome = h('input', { value: b.nome, placeholder: 'Push, Gambe, Full body…', oninput: (e) => { b.nome = e.target.value; } });
   const salva = () => {
-    const g = { id: uid('g'), nome: b.nome.trim() || `Allenamento ${LETT[S.scheda.giorni.length]}`, esercizi: b.esercizi.map((e) => ({ id: uid('e'), nome: e.nome, tipo: P.tipoDi(e), serie: e.serie, reps: e.reps, rec: e.rec, passo: e.passo, note: e.note || '' })) };
+    const g = { id: uid('g'), nome: b.nome.trim() || `Allenamento ${LETT[S.scheda.giorni.length]}`, esercizi: b.esercizi.map((e) => ({ id: uid('e'), ss: e.ss || null, nome: e.nome, tipo: P.tipoDi(e), serie: e.serie, reps: e.reps, rec: e.rec, passo: e.passo, note: e.note || '' })) };
     S.scheda.giorni.push(g); return g;
   };
   const vuoto = () => { if (b.esercizi.length) return false; toast('Aggiungi almeno un esercizio'); return true; };
   sheet(h('h2', { text: 'Nuovo allenamento' }), field('Nome', nome),
-    b.esercizi.length ? h('div', { class: 'list' }, b.esercizi.map((e, i) => h('div', { class: 'li' }, h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) })),
+    b.esercizi.length ? h('div', { class: 'list' }, b.esercizi.map((e, i) => h('div', { class: 'li' + (inSS(b.esercizi, i) ? ' ss' : '') }, h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) })),
+      ssBtn(b.esercizi, i, () => builder(b)),
       h('button', { class: 'mini', 'aria-label': 'Togli', onclick: () => { b.esercizi.splice(i, 1); builder(b); } }, ic('x'))))) : null,
     h('button', { class: 'add', onclick: () => pickEsercizio({ titolo: 'Esercizi', multi: true, gia: b.esercizi.map((e) => e.nome), onPick: (arr) => {
       const prima = b.esercizi.filter((e) => arr.some((a) => norm(a.nome) === norm(e.nome)));
-      b.esercizi = [...prima, ...arr.filter((a) => !prima.some((e) => norm(e.nome) === norm(a.nome)))]; builder(b);
+      b.esercizi = [...prima, ...arr.filter((a) => !prima.some((e) => norm(e.nome) === norm(a.nome))).map((a) => ({ ...a, ss: null }))]; builder(b);
     } }) }, ic('plus'), 'Esercizi'),
     h('div', { class: 'acts' },
       h('button', { class: 'btn sec2', onclick: () => { if (vuoto()) return; salva(); commit(); close(); toast('Allenamento salvato'); } }, 'Salva'),
@@ -571,7 +602,7 @@ function finish() {
     h('div', { class: 'chips2' }, e.serie.map((x, i) => chip(e, i))), h('div', { class: 'fb' }, riepilogoEs(e))));
   const rec = s.esercizi.filter((e) => P.confrontoEsercizio(e).rec).length;
   const vol = volume(s), dv = prec && volume(prec) ? Math.round(((vol - volume(prec)) / volume(prec)) * 100) : null;
-  S.sessioni.push(s); S.live = null; S.prossimo = null; commit();
+  S.sessioni.push(s); S.live = null; S.prossimo = null; N.annulla(); commit();
   sheet(h('h2', { text: s.nome }),
     h('div', { class: 'tot' },
       h('div', {}, h('small', { text: 'Durata' }), h('b', { class: 'num', text: `${Math.round((s.t1 - s.t0) / 60000)} min` })),
@@ -580,7 +611,7 @@ function finish() {
     ...blocchi,
     h('div', { class: 'acts' }, h('button', { class: 'btn wide', onclick: close }, 'Fatto')));
 }
-function discard() { if (!confirm('Annullo l’allenamento in corso?')) return; S.live = null; commit(); }
+function discard() { if (!confirm('Annullo l’allenamento in corso?')) return; S.live = null; N.annulla(); commit(); }
 
 /* ---------- recupero ---------- */
 let restInt = null, ac = null;
@@ -597,8 +628,8 @@ function renderRest() {
   box.hidden = false; box.classList.remove('fine');
   const tm = h('div', { class: 'tm num' }), bar = h('i');
   box.replaceChildren(h('div', { class: 'bar' }, bar), ic('clock'), tm,
-    h('button', { 'aria-label': 'Più 15 secondi', onclick: () => { R.fine += 15000; R.tot += 15; save(); } }, '+15'),
-    h('button', { 'aria-label': 'Chiudi', onclick: () => { S.live.riposo = null; save(); renderRest(); } }, ic('x')));
+    h('button', { 'aria-label': 'Più 15 secondi', onclick: () => { R.fine += 15000; R.tot += 15; save(); const nx = activeEx(); if (nx) N.programma((R.fine - Date.now()) / 1000, 'Recupero finito', nx.nome); } }, '+15'),
+    h('button', { 'aria-label': 'Chiudi', onclick: () => { S.live.riposo = null; N.annulla(); save(); renderRest(); } }, ic('x')));
   let suonato = false;
   const upd = () => {
     const left = (R.fine - Date.now()) / 1000;
@@ -633,8 +664,8 @@ function renderScheda(v) {
       h('button', { class: 'day-h', style: 'width:100%;text-align:left', onclick: () => editDay(g, i) },
         h('div', { class: 'badge', text: LETT[i] }), h('div', { class: 't' }, h('b', { text: g.nome })),
         i === nx ? h('span', { class: 'chip acc' }, 'Prossimo') : null, ic('edit')),
-      h('div', { class: 'exl' }, g.esercizi.map((e) => h('button', { onclick: () => editEx(g, e) },
-        h('span', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) }))),
+      h('div', { class: 'exl' }, g.esercizi.map((e, k) => h('button', { class: inSS(g.esercizi, k) ? 'ss' : '', onclick: () => editEx(g, e) },
+        h('span', {}, inSS(g.esercizi, k) ? ic('link') : null, e.nome), h('small', { class: 'num', text: exInfo(e) }))),
         h('button', { onclick: () => pickEsercizio({ titolo: 'Esercizio', onPick: (e) => { g.esercizi.push({ id: uid('e'), nome: e.nome, tipo: P.tipoDi(e), serie: e.serie, reps: e.reps, rec: e.rec, passo: e.passo, note: e.note || '' }); commit(); close(); } }), style: 'color:var(--acc);font-weight:600;justify-content:flex-start;gap:6px' }, ic('plus'), 'Esercizio'))));
   });
   if (!S.scheda.giorni.length) kids.push(h('div', { class: 'empty' }, ic('cal'), h('div', { text: 'Ancora nessun giorno' })));
@@ -679,6 +710,7 @@ function editEx(g, e) {
   sheet(h('h2', { text: e ? 'Esercizio' : 'Nuovo esercizio' }), field('Nome', i.nome), tipoSel(tipo, (t) => { tipo = t; lab.textContent = P.TIPI[t].obiettivo; fp.hidden = t !== 'pesi'; }),
     h('div', { class: 'fg3' }, field('Serie', i.serie), h('label', { class: 'f' }, lab, i.reps), field('Recupero (s)', i.rec)), h('div', { class: 'fg' }, fp, field('Note', i.note)),
     e ? h('div', { class: 'row', style: 'margin-bottom:12px' },
+      ssBtn(g.esercizi, idx, () => { commit(); editEx(g, e); }),
       idx > 0 ? h('button', { class: 'btn sec2', onclick: () => { [g.esercizi[idx - 1], g.esercizi[idx]] = [g.esercizi[idx], g.esercizi[idx - 1]]; commit(); close(); } }, ic('up')) : null,
       idx < g.esercizi.length - 1 ? h('button', { class: 'btn sec2', onclick: () => { [g.esercizi[idx + 1], g.esercizi[idx]] = [g.esercizi[idx], g.esercizi[idx + 1]]; commit(); close(); } }, ic('down')) : null) : null,
     h('div', { class: 'acts' },
@@ -839,11 +871,28 @@ function openSettings() {
       } }, 'Collega')) : null,
       h('div', { class: 'row', style: 'margin-top:12px' }, h('a', { class: 'btn sec2', href: '../ritmo/', style: 'text-decoration:none;flex:1' }, 'Apri Ritmo'),
         R.via === 'file' || R.via === 'gist' ? h('button', { class: 'btn sec2', onclick: () => { ritmo.scollega(); boot(); close(); } }, 'Scollega') : null)),
+    h('div', { class: 'sec' }, 'Notifiche e orologio'),
+    notifCard(),
     h('div', { class: 'sec' }, 'Copia di sicurezza'),
     h('div', { class: 'card' }, h('div', { class: 'note', style: 'margin-top:0', text: 'Scheda, allenamenti e pesate in un file. Le foto restano sul telefono.' }),
       h('div', { class: 'row' }, h('button', { class: 'btn sec2', style: 'flex:1', onclick: esporta }, 'Esporta'),
         h('button', { class: 'btn sec2', style: 'flex:1', onclick: importa }, 'Importa'))),
     h('div', { class: 'acts' }, h('button', { class: 'btn wide', onclick: close }, 'Fatto')));
+}
+function notifCard() {
+  if (!N.attive()) return h('div', { class: 'card' },
+    h('div', { class: 'note', style: 'margin-top:0', text: 'A fine recupero ti arriva una notifica anche a schermo spento, e lo smartwatch vibra.' }),
+    h('button', { class: 'btn wide', onclick: () => { N.attiva(); openSettings(); } }, ic('bell'), 'Attiva'));
+  const topic = S.notif.topic;
+  return h('div', { class: 'card notif' },
+    h('ol', {},
+      h('li', {}, 'Installa ', h('b', { text: 'ntfy' }), ' dall’App Store.'),
+      h('li', {}, 'In ntfy tocca ', h('b', { text: '+' }), ' e iscriviti a questo canale:',
+        h('div', { class: 'topic' }, h('code', { class: 'num', text: topic }), h('button', { class: 'mini', onclick: async () => { try { await navigator.clipboard.writeText(topic); toast('Copiato'); } catch (e) { toast(topic); } } }, 'Copia'))),
+      h('li', {}, 'Nell’app dello smartwatch lascia attive le notifiche di ntfy.'),
+      h('li', {}, 'Prova: deve arrivarti una notifica.')),
+    h('div', { class: 'row' }, h('button', { class: 'btn', style: 'flex:1', onclick: () => { N.prova(); toast('Inviata'); } }, ic('bell'), 'Prova'),
+      h('button', { class: 'btn sec2', onclick: () => { N.spegni(); openSettings(); } }, 'Spegni')));
 }
 function esporta() {
   const blob = new Blob([JSON.stringify({ app: 'carico', t: Date.now(), dati: S }, null, 1)], { type: 'application/json' });

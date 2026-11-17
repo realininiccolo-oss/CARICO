@@ -288,3 +288,16 @@ body.guida { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 .seg.tipi { margin-bottom: 12px; }
 .seg.tipi button { font-size: 13px; }
 .live-top .ib { flex: none; }
+
+/* ---------- superserie e notifiche ---------- */
+.ex.ss { border-left: 4px solid var(--amb); }
+.exl button.ss { border-left: 3px solid var(--amb); padding-left: 10px; }
+.exl button span svg { width: 15px; height: 15px; margin-right: 5px; vertical-align: -2px; color: var(--amb); }
+.li.ss { box-shadow: inset 4px 0 0 var(--amb); }
+.mini.on { color: var(--acc); background: var(--acc-soft); }
+.gpos { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gpos .chip { letter-spacing: 0; text-transform: none; }
+.notif ol { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 10px; color: var(--ink2); font-size: 15px; }
+.notif b { color: var(--ink); }
+.topic { display: flex; align-items: center; gap: 8px; margin-top: 6px; background: var(--soft); border-radius: 10px; padding: 4px 4px 4px 12px; }
+.topic code { flex: 1; font-size: 14px; color: var(--ink); word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
