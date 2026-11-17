@@ -1,0 +1,31 @@
+--- a/index.html
++++ b/index.html
+@@ -678,7 +678,16 @@
+ /* 2.6: ricorrenze e feste messe dal telefono con «ogni anno» (ogni: 'anno') compaiono anche nei tre anni dopo; le copie hanno orig = id dell'originale */
+ const yearly = (e) => { if (e.ogni !== 'anno') return [e]; const [y, m, d] = e.data.split('-').map(Number);
+   return [0, 1, 2, 3].map((k) => { const dd = m === 2 && d === 29 && (y + k) % 4 ? 28 : d; return k ? { ...e, data: `${y + k}-${pad(m)}-${pad(dd)}`, id: e.id + '~' + (y + k), orig: e.id } : e; }); };
+-const rebuildEvents = () => { const hid = new Set(S.nascosti); S.eventi = [...S.file.filter((e) => !hid.has(e.id)).map((e) => ({ ...e, src: 'file' })), ...S.miei.flatMap(yearly).map((e) => ({ ...e, src: 'mio' }))]; };
++/* Carico (app della palestra): i suoi allenamenti, nei giorni in cui Ritmo non ha già la palestra.
++   Si trattano come gli impegni del file: se li modifichi, Ritmo ne fa una copia tra i tuoi. */
++const caricoEv = () => {
++  try {
++    const x = JSON.parse(localStorage.getItem('carico:per-ritmo') || 'null'); if (!x || !Array.isArray(x.eventi)) return [];
++    const gym = new Set([...S.file, ...S.miei].filter((e) => catOf(e) === 'palestra').map((e) => e.data));
++    return x.eventi.filter((e) => e && e.data && !gym.has(e.data));
++  } catch (e) { return []; }
++};
++const rebuildEvents = () => { const hid = new Set(S.nascosti); S.eventi = [...[...S.file, ...caricoEv()].filter((e) => !hid.has(e.id)).map((e) => ({ ...e, src: 'file' })), ...S.miei.flatMap(yearly).map((e) => ({ ...e, src: 'mio' }))]; };
+ const evKey = (e) => 'e:' + e.id;
+ const dayRec = (d) => S.giorni[d] || {};
+ const isPlanned = (d) => !!dayRec(d).pianificato;
+@@ -939,6 +948,10 @@
+   lsSet('ritmo:sync-t', String(Date.now())); return j.id;
+ }
+ document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') scheduleSync(true); });
++/* Quando torno su Ritmo, rileggo gli allenamenti di Carico. */
++const caricoRefresh = () => { if (!$('#app').hidden) { rebuildEvents(); render(); } };
++document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') caricoRefresh(); });
++window.addEventListener('storage', (e) => { if (e.key === 'carico:per-ritmo') caricoRefresh(); });
+ function applyData(d) { S.wk = d.wk || null; S.cfg = d.cfg || null; S.nerina = d.nerina || {}; S.file = d.eventi || []; S.versione = d.versione || null; rebuildEvents(); }
+ function loadCachedData() { try { const d = JSON.parse(lsGet(LS.dati) || 'null'); if (d) applyData(d); return !!d; } catch (e) { return false; } }
+ const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
