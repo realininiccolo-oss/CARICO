@@ -17,6 +17,7 @@ const vuoto = () => ({
   salti: [],                          // date in cui ho detto «non oggi»
   prossimo: null,                     // giorno della scheda scelto a mano per il prossimo allenamento
   misure: [],                         // pesate e dati della bilancia
+  libreria: [],                       // tutti gli esercizi creati
 });
 
 export const S = load();

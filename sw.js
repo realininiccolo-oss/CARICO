@@ -1,5 +1,5 @@
 /* Funziona anche senza rete: prima la rete, poi la copia salvata. */
-const C = 'carico-v1';
+const C = 'carico-v2';
 const FILES = ['./', 'index.html', 'style.css', 'js/app.js', 'js/store.js', 'js/plan.js', 'js/ritmo.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(C).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((x) => x !== C).map((x) => caches.delete(x)))).then(() => self.clients.claim())); });

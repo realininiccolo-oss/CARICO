@@ -22,6 +22,7 @@ const ICON = {
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>', down: '<path d="M12 5v14M6 13l6 6 6-6"/>', cam: '<path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   scale: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 9.5a4 4 0 0 1 6 0l-2 2.5"/>', bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
   busy: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16h.01"/>', trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', dumb: '<path d="M3 9.5h2.5m13 0H21M3 14.5h2.5m13 0H21"/><rect x="5.5" y="6.5" width="3.5" height="11" rx="1"/><rect x="15" y="6.5" width="3.5" height="11" rx="1"/><path d="M9 12h6"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
 };
 const ic = (n) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.innerHTML = ICON[n]; return s; };
@@ -78,15 +79,13 @@ function renderOggi(v) {
   const ev = ritmo.palestraIl(t), occ = ritmo.impegniIl(t).length;
 
   if (!G.length) {
-    kids.push(h('div', { class: 'hero' }, h('div', { class: 'k' }, 'Scheda vuota'), h('div', { class: 'big', text: 'Iniziamo' }),
-      h('div', { class: 'meta' }, 'Aggiungi la scheda o allenati libero'),
-      h('div', { class: 'row' }, h('button', { class: 'play', 'aria-label': 'Allenamento libero', onclick: () => startLive(null) }, ic('play')),
-        h('button', { class: 'ghost', onclick: () => { TAB = 'scheda'; render(); } }, ic('plus'), 'Scheda'))));
+    kids.push(h('div', { class: 'hero' }, h('div', { class: 'k' }, 'Oggi'), h('div', { class: 'big', text: 'Giornata libera' }),
+      h('div', { class: 'meta' }, 'Crea un allenamento o registra un esercizio')));
   } else if (fatto.length) {
     const s = fatto[fatto.length - 1];
     kids.push(h('div', { class: 'hero' }, h('div', { class: 'k' }, ic('check'), 'Fatto'), h('div', { class: 'big', text: s.nome }),
       h('div', { class: 'meta' }, h('span', { class: 'num', text: `${Math.round((s.t1 - s.t0) / 60000)} min` }), h('span', { class: 'num', text: `${Math.round(volume(s)).toLocaleString('it')} kg` })),
-      h('div', { class: 'row' }, h('button', { class: 'ghost', onclick: () => openSessione(s) }, 'Dettagli'), h('button', { class: 'ghost', onclick: () => startLive(ag[0] && ag[0].giorno) }, ic('plus'), 'Un altro'))));
+      h('div', { class: 'row' }, h('button', { class: 'ghost', onclick: () => openSessione(s) }, 'Dettagli'), h('button', { class: 'ghost', onclick: addAllenamento }, ic('plus'), 'Un altro'))));
   } else {
     const next = ag[0], oggiSlot = next && next.data === t, g = next ? next.giorno : G[P.prossimoIdx()];
     kids.push(h('div', { class: 'hero' },
@@ -101,6 +100,10 @@ function renderOggi(v) {
         saltato ? h('button', { class: 'ghost', onclick: () => { P.annullaSalto(t); commit(); } }, 'Ripristina') : null,
         h('button', { class: 'ghost', 'aria-label': 'Cambia', onclick: () => pickDay() }, ic('swap')))));
   }
+
+  if (!fatto.length) kids.push(h('div', { class: 'tiles' },
+    h('button', { class: 'tile', onclick: addAllenamento }, h('span', { class: 'ico' }, ic('dumb')), h('b', { text: 'Allenamento' }), h('small', { text: 'Avvia un pacchetto' })),
+    h('button', { class: 'tile', onclick: addEsercizio }, h('span', { class: 'ico' }, ic('plus')), h('b', { text: 'Esercizio' }), h('small', { text: 'Registra un esercizio' }))));
 
   const resto = ag.filter((a) => !(a.data === t && !fatto.length));
   if (resto.length && G.length) {
@@ -158,7 +161,7 @@ function renderLive(v) {
   upd(); clearInterval(tick); tick = setInterval(() => { if (!S.live) return clearInterval(tick); upd(); }, 1000);
   const kids = [h('div', { class: 'live-top' }, h('div', { class: 't' }, h('b', { text: L.nome }), el), h('button', { class: 'btn', onclick: finish }, 'Fine'))];
   L.esercizi.forEach((e, ei) => kids.push(exCard(e, ei)));
-  kids.push(h('button', { class: 'add', onclick: addLiveEx }, ic('plus'), 'Esercizio'));
+  kids.push(h('button', { class: 'add', onclick: addEsercizio }, ic('plus'), 'Esercizio'));
   kids.push(h('div', { style: 'text-align:center;margin-top:18px' }, h('button', { class: 'btn danger', onclick: discard }, 'Annulla allenamento')));
   v.replaceChildren(...kids);
 }
@@ -193,16 +196,106 @@ function setRow(e, s, si) {
       commit();
     } }, ic('check')));
 }
-function addLiveEx() {
-  const nomi = [...new Set(S.scheda.giorni.flatMap((g) => g.esercizi.map((e) => e.nome)).concat(P.eserciziFatti()))];
-  const inp = h('input', { placeholder: 'Nome', list: 'exn', autocomplete: 'off' });
-  sheet(h('h2', { text: 'Esercizio' }), field('Nome', inp), h('datalist', { id: 'exn' }, nomi.map((n) => h('option', { value: n }))),
+/* ---------- libreria esercizi ---------- */
+const norm = (x) => (x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+function syncLib() {
+  if (!Array.isArray(S.libreria)) S.libreria = [];
+  const has = new Set(S.libreria.map((e) => norm(e.nome)));
+  const add = (e) => { if (e && e.nome && !has.has(norm(e.nome))) { has.add(norm(e.nome)); S.libreria.push({ id: uid('l'), nome: e.nome, serie: e.serie || 3, reps: e.reps || '', rec: e.rec ?? 90, note: e.note || '' }); } };
+  S.scheda.giorni.forEach((g) => g.esercizi.forEach(add));
+  S.sessioni.forEach((x) => x.esercizi.forEach((e) => add({ nome: e.nome, serie: e.serie.length, reps: e.reps, rec: e.rec })));
+}
+function libUpsert(x) {
+  syncLib();
+  const e = S.libreria.find((l) => norm(l.nome) === norm(x.nome));
+  if (e) Object.assign(e, { nome: x.nome, serie: x.serie, reps: x.reps, rec: x.rec }); else S.libreria.push({ id: uid('l'), note: '', ...x });
+  return e || S.libreria[S.libreria.length - 1];
+}
+const lastUsed = (nome) => { for (let k = S.sessioni.length - 1; k >= 0; k--) if (S.sessioni[k].esercizi.some((e) => norm(e.nome) === norm(nome))) return S.sessioni[k].data; return ''; };
+const searchBox = (q) => h('div', { class: 'searchbox' }, ic('search'), q);
+const exInfo = (e) => `${e.serie} × ${e.reps || '–'} · ${e.rec}s`;
+
+/* Elenco degli esercizi con ricerca: tocca per scegliere, oppure creane uno nuovo. */
+function pickEsercizio({ titolo, multi = false, gia = [], onPick }) {
+  syncLib();
+  const scelti = new Set(gia.map(norm));
+  const q = h('input', { type: 'search', placeholder: 'Cerca o crea', autocomplete: 'off', enterkeyhint: 'done' });
+  const list = h('div', { class: 'list' });
+  const ok = multi ? h('button', { class: 'btn wide', style: 'margin-top:14px', onclick: () => onPick(S.libreria.filter((e) => scelti.has(norm(e.nome)))) }) : null;
+  const riapri = () => pickEsercizio({ titolo, multi, gia: [...scelti], onPick });
+  const crea = () => nuovoEsercizio(q.value.trim(), (e) => { if (multi) { scelti.add(norm(e.nome)); riapri(); } else onPick(e); });
+  function draw() {
+    const k = norm(q.value), exact = S.libreria.some((e) => norm(e.nome) === k);
+    const L = S.libreria.filter((e) => !k || norm(e.nome).includes(k))
+      .sort((a, b) => lastUsed(b.nome).localeCompare(lastUsed(a.nome)) || a.nome.localeCompare(b.nome, 'it'));
+    list.replaceChildren(...[
+      !exact ? h('button', { class: 'li new', onclick: crea }, h('span', { class: 'badge' }, ic('plus')), h('div', { class: 't' }, h('b', { text: k ? `Crea «${q.value.trim()}»` : 'Crea nuovo esercizio' }))) : null,
+      ...L.map((e) => {
+        const on = scelti.has(norm(e.nome));
+        return h('button', { class: 'li' + (on ? ' sel' : ''), onclick: () => { if (!multi) return onPick(e); if (on) scelti.delete(norm(e.nome)); else scelti.add(norm(e.nome)); draw(); } },
+          h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) })), multi ? h('span', { class: 'tick' }, ic('check')) : h('span', { class: 'r' }, ic('plus')));
+      }),
+    ].filter(Boolean));
+    if (ok) ok.textContent = scelti.size ? `Aggiungi ${scelti.size}` : 'Fatto';
+  }
+  q.addEventListener('input', draw);
+  sheet(h('h2', { text: titolo }), searchBox(q), list, ok);
+  draw();
+}
+function nuovoEsercizio(nome, cb) {
+  const i = { nome: h('input', { value: nome || '', placeholder: 'Panca piana' }), serie: h('input', { inputmode: 'numeric', value: 3 }),
+    reps: h('input', { value: '8-10' }), rec: h('input', { inputmode: 'numeric', value: 90 }) };
+  sheet(h('h2', { text: 'Nuovo esercizio' }), field('Nome', i.nome),
+    h('div', { class: 'fg3' }, field('Serie', i.serie), field('Ripetizioni', i.reps), field('Recupero (s)', i.rec)),
     h('div', { class: 'acts' }, h('button', { class: 'btn', onclick: () => {
-      const n = inp.value.trim(); if (!n) return;
-      const base = S.scheda.giorni.flatMap((g) => g.esercizi).find((e) => e.nome.toLowerCase() === n.toLowerCase()) || { nome: n, serie: 3, reps: '', rec: 90 };
-      S.live.esercizi.push(liveEx(base)); commit(); close(); setTimeout(() => scrollTo(0, document.body.scrollHeight), 50);
-    } }, 'Aggiungi')));
-  setTimeout(() => inp.focus(), 250);
+      const x = { nome: i.nome.value.trim(), serie: Math.max(1, num(i.serie.value) || 3), reps: i.reps.value.trim(), rec: Math.max(0, num(i.rec.value) ?? 90) };
+      if (!x.nome) return;
+      const e = libUpsert(x); save(); cb(e);
+    } }, 'Salva')));
+  if (!nome) setTimeout(() => i.nome.focus(), 250);
+}
+/* Aggiungi esercizio: entra nell'allenamento in corso, o ne apre uno libero di oggi. */
+function addEsercizio() {
+  pickEsercizio({ titolo: 'Esercizio', onPick: (e) => {
+    close();
+    if (!S.live) S.live = { id: uid('s'), data: today(), giorno: null, nome: 'Libero', t0: Date.now(), riposo: null, esercizi: [] };
+    S.live.esercizi.push(liveEx(e)); TAB = 'oggi'; commit();
+    setTimeout(() => scrollTo(0, document.body.scrollHeight), 60);
+  } });
+}
+/* Aggiungi allenamento: i pacchetti creati, con ricerca, o uno nuovo. */
+function addAllenamento() {
+  const q = h('input', { type: 'search', placeholder: 'Cerca allenamento o esercizio', autocomplete: 'off', enterkeyhint: 'done' });
+  const list = h('div', { class: 'list' });
+  function draw() {
+    const k = norm(q.value), G = S.scheda.giorni.filter((g) => !k || norm(g.nome).includes(k) || g.esercizi.some((e) => norm(e.nome).includes(k)));
+    list.replaceChildren(
+      h('button', { class: 'li new', onclick: () => builder({ nome: k && !G.length ? q.value.trim() : '', esercizi: [] }) }, h('span', { class: 'badge' }, ic('plus')),
+        h('div', { class: 't' }, h('b', { text: 'Crea nuovo allenamento' }), h('small', { text: 'scegli gli esercizi' }))),
+      ...G.map((g) => h('button', { class: 'li', onclick: () => { close(); startLive(g); } }, h('span', { class: 'badge', text: LETT[S.scheda.giorni.indexOf(g)] }),
+        h('div', { class: 't' }, h('b', { text: g.nome }), h('small', { text: g.esercizi.map((e) => e.nome).join(' · ') || 'vuoto' })), h('span', { class: 'r' }, ic('play')))));
+  }
+  q.addEventListener('input', draw);
+  sheet(h('h2', { text: 'Allenamento' }), searchBox(q), list);
+  draw();
+}
+function builder(b) {
+  const nome = h('input', { value: b.nome, placeholder: 'Push, Gambe, Full body…', oninput: (e) => { b.nome = e.target.value; } });
+  const salva = () => {
+    const g = { id: uid('g'), nome: b.nome.trim() || `Allenamento ${LETT[S.scheda.giorni.length]}`, esercizi: b.esercizi.map((e) => ({ id: uid('e'), nome: e.nome, serie: e.serie, reps: e.reps, rec: e.rec, note: e.note || '' })) };
+    S.scheda.giorni.push(g); return g;
+  };
+  const vuoto = () => { if (b.esercizi.length) return false; toast('Aggiungi almeno un esercizio'); return true; };
+  sheet(h('h2', { text: 'Nuovo allenamento' }), field('Nome', nome),
+    b.esercizi.length ? h('div', { class: 'list' }, b.esercizi.map((e, i) => h('div', { class: 'li' }, h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) })),
+      h('button', { class: 'mini', 'aria-label': 'Togli', onclick: () => { b.esercizi.splice(i, 1); builder(b); } }, ic('x'))))) : null,
+    h('button', { class: 'add', onclick: () => pickEsercizio({ titolo: 'Esercizi', multi: true, gia: b.esercizi.map((e) => e.nome), onPick: (arr) => {
+      const prima = b.esercizi.filter((e) => arr.some((a) => norm(a.nome) === norm(e.nome)));
+      b.esercizi = [...prima, ...arr.filter((a) => !prima.some((e) => norm(e.nome) === norm(a.nome)))]; builder(b);
+    } }) }, ic('plus'), 'Esercizi'),
+    h('div', { class: 'acts' },
+      h('button', { class: 'btn sec2', onclick: () => { if (vuoto()) return; salva(); commit(); close(); toast('Allenamento salvato'); } }, 'Salva'),
+      h('button', { class: 'btn', onclick: () => { if (vuoto()) return; const g = salva(); close(); startLive(g); } }, ic('play'), 'Inizia')));
 }
 function finish() {
   const L = S.live, fatte = L.esercizi.reduce((a, e) => a + e.serie.filter((s) => s.ok).length, 0);
@@ -210,6 +303,7 @@ function finish() {
   const prima = Object.fromEntries(L.esercizi.map((e) => [e.nome, Math.max(0, ...P.storia(e.nome).map((x) => x.v))]));
   const s = { ...L, t1: Date.now(), esercizi: L.esercizi.map((e) => ({ ...e, serie: e.serie.filter((x) => x.ok) })).filter((e) => e.serie.length) };
   delete s.riposo;
+  if (!s.giorno) { const n = s.esercizi.map((e) => e.nome); s.nome = n.slice(0, 2).join(' · ') + (n.length > 2 ? ` +${n.length - 2}` : ''); }
   S.sessioni.push(s); S.live = null; S.prossimo = null; commit();
   const pr = s.esercizi.filter((e) => { const b = Math.max(0, ...e.serie.map((x) => P.e1rm(num(x.kg) || 0, num(x.reps) || 0))); return prima[e.nome] > 0 && b > prima[e.nome] + 0.01; }).map((e) => e.nome);
   openSessione(s, pr);
@@ -269,7 +363,7 @@ function renderScheda(v) {
         i === nx ? h('span', { class: 'chip acc' }, 'Prossimo') : null, ic('edit')),
       h('div', { class: 'exl' }, g.esercizi.map((e) => h('button', { onclick: () => editEx(g, e) },
         h('span', { text: e.nome }), h('small', { class: 'num', text: `${e.serie} × ${e.reps || '–'} · ${e.rec}s` }))),
-        h('button', { onclick: () => editEx(g, null), style: 'color:var(--acc);font-weight:600;justify-content:flex-start;gap:6px' }, ic('plus'), 'Esercizio'))));
+        h('button', { onclick: () => pickEsercizio({ titolo: 'Esercizio', onPick: (e) => { g.esercizi.push({ id: uid('e'), nome: e.nome, serie: e.serie, reps: e.reps, rec: e.rec, note: e.note || '' }); commit(); close(); } }), style: 'color:var(--acc);font-weight:600;justify-content:flex-start;gap:6px' }, ic('plus'), 'Esercizio'))));
   });
   if (!S.scheda.giorni.length) kids.push(h('div', { class: 'empty' }, ic('cal'), h('div', { text: 'Ancora nessun giorno' })));
   kids.push(h('button', { class: 'add', onclick: () => editDay(null) }, ic('plus'), 'Giorno'));
@@ -318,6 +412,7 @@ function editEx(g, e) {
         const x = { id: e ? e.id : uid('e'), nome: i.nome.value.trim(), serie: Math.max(1, num(i.serie.value) || 3), reps: i.reps.value.trim(), rec: Math.max(0, num(i.rec.value) ?? 90), note: i.note.value.trim() };
         if (!x.nome) return;
         if (e) Object.assign(e, x); else g.esercizi.push(x);
+        libUpsert({ nome: x.nome, serie: x.serie, reps: x.reps, rec: x.rec });
         commit(); close();
       } }, 'Salva')));
   if (!e) setTimeout(() => i.nome.focus(), 250);
@@ -488,7 +583,7 @@ function importa() {
 
 /* ---------- salvataggio e avvio ---------- */
 function commit() { save(); P.aggiornaRitmo(); render(); }
-async function boot() { await ritmo.leggi(); P.aggiornaRitmo(); render(); }
+async function boot() { syncLib(); await ritmo.leggi(); P.aggiornaRitmo(); render(); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') boot(); });
 window.addEventListener('storage', (e) => { if (e.key && e.key.startsWith('ritmo:')) boot(); });
 render(); boot();
