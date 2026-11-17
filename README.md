@@ -2,7 +2,7 @@
 
 Scheda d'allenamento viva e progressi in palestra. App web (PWA) senza server: i dati restano sul telefono.
 
-**Indirizzo:** https://realininiccolo-oss.github.io/carico/ — aprilo in Safari → Condividi → *Aggiungi alla schermata Home*.
+**Indirizzo:** https://realininiccolo-oss.github.io/CARICO/ — aprilo in Safari → Condividi → *Aggiungi alla schermata Home*.
 
 ## Cosa fa
 
