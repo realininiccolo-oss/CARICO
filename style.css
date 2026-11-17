@@ -249,3 +249,42 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 
 .ex { scroll-margin: 90px 0 140px; }
 .live-pad { height: 90px; }
+
+/* ---------- guida: una schermata alla volta ---------- */
+body.guida #tabs { display: none; }
+body.guida { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.gbar { height: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; margin: 0 4px 18px; }
+.gbar i { display: block; height: 100%; background: var(--acc); transition: width .4s; }
+.glav, .grip, .gdone { padding: 0 4px; }
+.gpos, .glab { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
+.gname { font-size: 34px; font-weight: 800; letter-spacing: -.035em; line-height: 1.05; margin: 4px 0 8px; }
+.gsub { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink2); font-size: 14px; margin-bottom: 14px; }
+.glav .cur { background: none; padding: 0; }
+.glav .cur-l { margin: 4px 2px 8px; }
+.glav .stp .sv { font-size: 58px; }
+.glav .stp .ar { height: 58px; }
+.glav .fatta { height: 62px; border-radius: 18px; font-size: 20px; margin-top: 14px; }
+.glinks { display: flex; justify-content: center; gap: 6px; margin-top: 14px; }
+.grip { text-align: center; }
+.glab { font-size: 13px; margin-top: 6px; }
+.ringbox { position: relative; width: 260px; height: 260px; margin: 10px auto 18px; }
+.ring { width: 100%; height: 100%; }
+.ring .arc { transition: stroke-dashoffset .25s linear; }
+.rt { position: absolute; inset: 0; display: grid; place-items: center; font-size: 66px; font-weight: 800; letter-spacing: -.04em; }
+.rbtn { display: flex; gap: 10px; justify-content: center; }
+.rbtn .btn { min-width: 80px; height: 52px; }
+.next { margin-top: 18px; background: var(--card); border-radius: 16px; padding: 14px 16px; text-align: left; box-shadow: 0 1px 0 var(--line); }
+.next small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
+.next b { display: block; font-size: 21px; font-weight: 800; letter-spacing: -.02em; margin: 2px 0; }
+.next span { color: var(--ink2); font-size: 14px; }
+.gdone { text-align: center; padding-top: 40px; }
+.big-ic { width: 88px; height: 88px; border-radius: 50%; background: var(--acc-soft); color: var(--acc); display: grid; place-items: center; margin: 0 auto 14px; }
+.big-ic svg { width: 44px; height: 44px; }
+.gdone b { font-size: 26px; font-weight: 800; display: block; margin-bottom: 18px; }
+.cron { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 14px; padding: 8px 8px 8px 14px; margin-bottom: 10px; box-shadow: 0 1px 0 var(--line); color: var(--mute); }
+.cron b { flex: 1; font-size: 30px; font-weight: 800; color: var(--ink); }
+.cron.on b { color: var(--acc); }
+.cron .btn { height: 44px; }
+.seg.tipi { margin-bottom: 12px; }
+.seg.tipi button { font-size: 13px; }
+.live-top .ib { flex: none; }

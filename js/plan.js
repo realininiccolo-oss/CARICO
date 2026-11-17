@@ -49,11 +49,41 @@ export function aggiornaRitmo() {
   ritmo.pubblica([...fatti, ...lista]);
 }
 
+/* ---------- tipi di esercizio ---------- */
+/* campi: [chiave, unità, passo, decimali]. ordine: quali campi contano per dire "meglio" o "peggio". */
+export const TIPI = {
+  pesi: { n: 'Pesi', campi: [['kg', 'kg', 2.5, true], ['reps', 'rip', 1, false]], ordine: ['kg', 'reps'], obiettivo: 'Ripetizioni', serie: 3 },
+  corpo: { n: 'Corpo libero', campi: [['reps', 'rip', 1, false]], ordine: ['reps'], obiettivo: 'Ripetizioni', serie: 3 },
+  tempo: { n: 'A tempo', campi: [['sec', 'sec', 5, false]], ordine: ['sec'], obiettivo: 'Secondi', serie: 3 },
+  cardio: { n: 'Cardio', campi: [['min', 'min', 1, true], ['km', 'km', 0.1, true], ['liv', 'livello', 1, false]], ordine: ['km', 'min', 'liv'], obiettivo: 'Obiettivo (min)', serie: 1 },
+};
+const CARDIO = /\b(corsa|cyclette|bici|tapis|ellittica|vogatore|camminata|nuoto|spinning|cardio|step|stairmaster)/i;
+export const tipoDi = (e) => (e && TIPI[e.tipo] ? e.tipo : CARDIO.test((e && e.nome) || '') ? 'cardio' : 'pesi');
+
 /* ---------- numeri ---------- */
 export const e1rm = (kg, reps) => (kg > 0 && reps > 0 ? kg * (1 + reps / 30) : 0); // stima di Epley
 export const topReps = (r) => { const m = String(r || '').match(/(\d+)\s*(?:[-–]\s*(\d+))?/); return m ? Number(m[2] || m[1]) : 0; };
 export const lowReps = (r) => { const m = String(r || '').match(/(\d+)/); return m ? Number(m[1]) : 0; };
 const chiave = (e) => (e.esId || e.nome || '').toLowerCase();
+const okSerie = (e) => (e ? e.serie.filter((s) => s.ok) : []);
+export const n0 = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
+
+/* Quanto "vale" una serie: pesi → massimale stimato; corpo → ripetizioni; tempo → secondi; cardio → km (o minuti). */
+export function forza(t, s) {
+  if (t === 'pesi') return e1rm(n0(s.kg), n0(s.reps));
+  if (t === 'corpo') return n0(s.reps);
+  if (t === 'tempo') return n0(s.sec);
+  return n0(s.km) || n0(s.min);
+}
+export const unitaForza = (t, e) => ({ pesi: 'kg', corpo: 'rip', tempo: 's', cardio: e && okSerie(e).some((x) => n0(x.km)) ? 'km' : 'min' }[t]);
+/* Volume: pesi kg×rip; corpo ripetizioni; tempo secondi; cardio km (o minuti). */
+export function volumeEs(e) {
+  const t = tipoDi(e), ok = okSerie(e);
+  if (t === 'pesi') return ok.reduce((a, s) => a + n0(s.kg) * n0(s.reps), 0);
+  if (t === 'cardio') { const km = ok.reduce((a, s) => a + n0(s.km), 0); return km || ok.reduce((a, s) => a + n0(s.min), 0); }
+  return ok.reduce((a, s) => a + forza(t, s), 0);
+}
+export const unitaVolume = (e) => ({ pesi: 'kg', corpo: 'rip', tempo: 's', cardio: okSerie(e).some((x) => n0(x.km)) ? 'km' : 'min' }[tipoDi(e)]);
 
 /* Ultima volta che ho fatto questo esercizio (stesso id o stesso nome). */
 export function ultima(es) {
@@ -63,48 +93,57 @@ export function ultima(es) {
   }
   return null;
 }
-/* Proposta di carico: se l'ultima volta tutte le serie hanno toccato il massimo delle ripetizioni, +2,5 kg. */
+/* Valori di partenza. Pesi: se l'ultima volta tutte le serie hanno toccato il massimo delle ripetizioni, +passo kg. */
 export function proposta(es) {
-  const u = ultima(es); if (!u) return { kg: '', reps: lowReps(es.reps) || '', su: false };
-  const fatte = u.serie.filter((s) => s.ok), top = topReps(es.reps), kg = Math.max(...fatte.map((s) => Number(s.kg) || 0));
-  const su = top > 0 && fatte.length >= (es.serie || fatte.length) && fatte.every((s) => Number(s.reps) >= top) && kg > 0;
-  return { kg: su ? kg + 2.5 : kg || '', reps: su ? lowReps(es.reps) : (fatte[0] && fatte[0].reps) || lowReps(es.reps) || '', su };
+  const t = tipoDi(es), u = ultima(es), fatte = okSerie(u), base = {};
+  if (t === 'pesi') {
+    if (!fatte.length) return { kg: '', reps: lowReps(es.reps) || '', su: false };
+    const top = topReps(es.reps), kg = Math.max(...fatte.map((s) => n0(s.kg)));
+    const su = top > 0 && fatte.length >= (es.serie || fatte.length) && fatte.every((s) => n0(s.reps) >= top) && kg > 0;
+    return { kg: su ? kg + (Number(es.passo) || 2.5) : kg || '', reps: su ? lowReps(es.reps) : (fatte[0] && fatte[0].reps) || lowReps(es.reps) || '', su };
+  }
+  for (const [k] of TIPI[t].campi) base[k] = fatte[0] ? n0(fatte[0][k]) || '' : '';
+  const ob = lowReps(es.reps);
+  if (!fatte.length && ob) base[{ corpo: 'reps', tempo: 'sec', cardio: 'min' }[t]] = ob;
+  return { ...base, su: false };
 }
-/* Storia di un esercizio: miglior e1RM per sessione. */
+/* Storia di un esercizio: la serie migliore per allenamento. */
 export function storia(nome) {
   const n = nome.toLowerCase(), out = [];
   for (const s of S.sessioni) for (const e of s.esercizi) if ((e.nome || '').toLowerCase() === n) {
-    const ok = e.serie.filter((x) => x.ok && Number(x.kg) > 0);
-    if (ok.length) { const best = ok.reduce((a, b) => (e1rm(+b.kg, +b.reps) > e1rm(+a.kg, +a.reps) ? b : a)); out.push({ data: s.data, v: Math.round(e1rm(+best.kg, +best.reps) * 10) / 10, kg: +best.kg, reps: +best.reps }); }
+    const t = tipoDi(e), ok = okSerie(e).filter((x) => forza(t, x) > 0);
+    if (!ok.length) continue;
+    const best = ok.reduce((a, b) => (forza(t, b) > forza(t, a) ? b : a));
+    out.push({ data: s.data, v: Math.round(forza(t, best) * 10) / 10, s: best, t, tot: Math.round(volumeEs(e) * 10) / 10 });
   }
   return out;
 }
-export const eserciziFatti = () => [...new Set(S.sessioni.flatMap((s) => s.esercizi.filter((e) => e.serie.some((x) => x.ok && +x.kg > 0)).map((e) => e.nome)))];
-
-/* ---------- confronto con l'ultima volta ---------- */
-const okSerie = (e) => (e ? e.serie.filter((s) => s.ok) : []);
-const n0 = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
+export const eserciziFatti = () => [...new Set(S.sessioni.flatMap((s) => s.esercizi.filter((e) => okSerie(e).some((x) => forza(tipoDi(e), x) > 0)).map((e) => e.nome)))];
 export const record = (nome) => Math.max(0, ...storia(nome).map((x) => x.v));
-export const volumeEs = (e) => okSerie(e).reduce((a, s) => a + n0(s.kg) * n0(s.reps), 0);
 
+/* Differenze tra due serie, nell'ordine che conta per il tipo. */
+function diff(t, a, b) {
+  const d = {}; let dir = 0;
+  for (const k of TIPI[t].ordine) { d[k] = Math.round((n0(a[k]) - n0(b[k])) * 100) / 100; if (!dir && d[k]) dir = Math.sign(d[k]); }
+  return { d, dir };
+}
 /* Una serie appena fatta contro la stessa serie dell'ultima volta. */
 export function confrontoSerie(es, i) {
-  const s = es.serie[i], u = okSerie(ultima(es)), kg = n0(s.kg), r = n0(s.reps);
-  // record: meglio di tutto lo storico e delle serie già fatte oggi
-  const prima = Math.max(record(es.nome), ...es.serie.slice(0, i).filter((x) => x.ok).map((x) => e1rm(n0(x.kg), n0(x.reps))));
-  const rec = record(es.nome) > 0 && e1rm(kg, r) > prima + 0.01;
-  if (!u.length) return { prima: true, dir: 0, rec };
-  const p = u[Math.min(i, u.length - 1)], dk = Math.round((kg - n0(p.kg)) * 10) / 10, dr = r - n0(p.reps);
-  return { dk, dr, rec, dir: dk ? Math.sign(dk) : Math.sign(dr), prima: false };
+  const t = tipoDi(es), s = es.serie[i], u = okSerie(ultima(es));
+  const prima = Math.max(record(es.nome), ...es.serie.slice(0, i).filter((x) => x.ok).map((x) => forza(t, x)));
+  const rec = record(es.nome) > 0 && forza(t, s) > prima + 0.01;
+  if (!u.length) return { prima: true, dir: 0, rec, t };
+  return { ...diff(t, s, u[Math.min(i, u.length - 1)]), rec, t, prima: false };
 }
-/* Un esercizio finito contro l'ultima volta: volume, serie migliore, record. */
+/* Un esercizio finito contro l'ultima volta: volume, serie migliore, passo (cardio), record. */
 export function confrontoEsercizio(es) {
-  const ok = okSerie(es), vol = volumeEs(es);
-  const best = ok.reduce((a, s) => (e1rm(n0(s.kg), n0(s.reps)) > e1rm(n0(a.kg), n0(a.reps)) ? s : a), ok[0] || { kg: 0, reps: 0 });
-  const u = ultima(es), rec = record(es.nome) > 0 && e1rm(n0(best.kg), n0(best.reps)) > record(es.nome) + 0.01;
-  if (!u) return { prima: true, vol, best, rec, dir: 0 };
-  const pv = volumeEs(u), uo = okSerie(u);
-  const pb = uo.reduce((a, s) => (e1rm(n0(s.kg), n0(s.reps)) > e1rm(n0(a.kg), n0(a.reps)) ? s : a), uo[0]);
-  const dv = pv ? Math.round(((vol - pv) / pv) * 100) : null, dk = Math.round((n0(best.kg) - n0(pb.kg)) * 10) / 10, dr = n0(best.reps) - n0(pb.reps);
-  return { prima: false, vol, pv, dv, best, pb, dk, dr, rec, dir: Math.sign(dv || 0) || Math.sign(dk) || Math.sign(dr) };
+  const t = tipoDi(es), ok = okSerie(es), vol = volumeEs(es), uv = unitaVolume(es);
+  const migliore = (l) => l.reduce((a, s) => (forza(t, s) > forza(t, a) ? s : a), l[0] || {});
+  const best = migliore(ok), rec = record(es.nome) > 0 && forza(t, best) > record(es.nome) + 0.01;
+  const passo = (l) => { const km = l.reduce((a, s) => a + n0(s.km), 0), mi = l.reduce((a, s) => a + n0(s.min), 0); return km && mi ? mi / km : null; };
+  const u = ultima(es);
+  if (!u) return { prima: true, vol, uv, best, rec, dir: 0, t, passo: passo(ok) };
+  const pv = volumeEs(u), uo = okSerie(u), pb = migliore(uo), dv = pv ? Math.round(((vol - pv) / pv) * 100) : null;
+  const pa = passo(ok), pp = passo(uo);
+  return { prima: false, vol, uv, pv, dv, best, pb, ...diff(t, best, pb), rec, t, passo: pa, dpasso: pa && pp ? pa - pp : null };
 }
