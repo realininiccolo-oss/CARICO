@@ -80,3 +80,31 @@ export function storia(nome) {
   return out;
 }
 export const eserciziFatti = () => [...new Set(S.sessioni.flatMap((s) => s.esercizi.filter((e) => e.serie.some((x) => x.ok && +x.kg > 0)).map((e) => e.nome)))];
+
+/* ---------- confronto con l'ultima volta ---------- */
+const okSerie = (e) => (e ? e.serie.filter((s) => s.ok) : []);
+const n0 = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
+export const record = (nome) => Math.max(0, ...storia(nome).map((x) => x.v));
+export const volumeEs = (e) => okSerie(e).reduce((a, s) => a + n0(s.kg) * n0(s.reps), 0);
+
+/* Una serie appena fatta contro la stessa serie dell'ultima volta. */
+export function confrontoSerie(es, i) {
+  const s = es.serie[i], u = okSerie(ultima(es)), kg = n0(s.kg), r = n0(s.reps);
+  // record: meglio di tutto lo storico e delle serie già fatte oggi
+  const prima = Math.max(record(es.nome), ...es.serie.slice(0, i).filter((x) => x.ok).map((x) => e1rm(n0(x.kg), n0(x.reps))));
+  const rec = record(es.nome) > 0 && e1rm(kg, r) > prima + 0.01;
+  if (!u.length) return { prima: true, dir: 0, rec };
+  const p = u[Math.min(i, u.length - 1)], dk = Math.round((kg - n0(p.kg)) * 10) / 10, dr = r - n0(p.reps);
+  return { dk, dr, rec, dir: dk ? Math.sign(dk) : Math.sign(dr), prima: false };
+}
+/* Un esercizio finito contro l'ultima volta: volume, serie migliore, record. */
+export function confrontoEsercizio(es) {
+  const ok = okSerie(es), vol = volumeEs(es);
+  const best = ok.reduce((a, s) => (e1rm(n0(s.kg), n0(s.reps)) > e1rm(n0(a.kg), n0(a.reps)) ? s : a), ok[0] || { kg: 0, reps: 0 });
+  const u = ultima(es), rec = record(es.nome) > 0 && e1rm(n0(best.kg), n0(best.reps)) > record(es.nome) + 0.01;
+  if (!u) return { prima: true, vol, best, rec, dir: 0 };
+  const pv = volumeEs(u), uo = okSerie(u);
+  const pb = uo.reduce((a, s) => (e1rm(n0(s.kg), n0(s.reps)) > e1rm(n0(a.kg), n0(a.reps)) ? s : a), uo[0]);
+  const dv = pv ? Math.round(((vol - pv) / pv) * 100) : null, dk = Math.round((n0(best.kg) - n0(pb.kg)) * 10) / 10, dr = n0(best.reps) - n0(pb.reps);
+  return { prima: false, vol, pv, dv, best, pb, dk, dr, rec, dir: Math.sign(dv || 0) || Math.sign(dk) || Math.sign(dr) };
+}
