@@ -301,3 +301,17 @@ body.guida { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 .notif b { color: var(--ink); }
 .topic { display: flex; align-items: center; gap: 8px; margin-top: 6px; background: var(--soft); border-radius: 10px; padding: 4px 4px 4px 12px; }
 .topic code { flex: 1; font-size: 14px; color: var(--ink); word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+
+/* ---------- fogli che si chiudono, pausa ---------- */
+.sheet-bg { cursor: pointer; }
+.sheet-card { transition: transform .2s ease; }
+.sheet-x { position: absolute; top: 12px; right: 14px; width: 38px; height: 38px; border-radius: 50%; background: var(--soft); color: var(--ink2); display: grid; place-items: center; z-index: 3; }
+.sheet-x svg { width: 18px; height: 18px; stroke-width: 2.2; }
+#toast { cursor: pointer; }
+.badge.acc { background: var(--acc-soft); color: var(--acc); }
+.ghost-l { font-weight: 700; font-size: 16px; }
+#resume { position: fixed; left: 12px; right: 12px; bottom: calc(var(--tabs) + env(safe-area-inset-bottom) + 10px); z-index: 15; background: var(--hero); color: #FBEFE8; border-radius: 18px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 28px -10px rgba(80, 15, 5, .6); max-width: 536px; margin: 0 auto; }
+#resume .t { flex: 1; min-width: 0; }
+#resume b { display: block; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#resume small { opacity: .75; font-size: 13px; }
+#resume .btn { background: #FBEFE8; color: var(--acc); }

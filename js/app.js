@@ -26,6 +26,7 @@ const ICON = {
   focus: '<path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/><circle cx="12" cy="12" r="2.5"/>', list: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
   equal: '<path d="M6 9.5h12M6 14.5h12"/>', flag: '<path d="M6 21V4M6 4h11l-2 4 2 4H6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', dumb: '<path d="M3 9.5h2.5m13 0H21M3 14.5h2.5m13 0H21"/><rect x="5.5" y="6.5" width="3.5" height="11" rx="1"/><rect x="15" y="6.5" width="3.5" height="11" rx="1"/><path d="M9 12h6"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
 };
@@ -45,13 +46,26 @@ function toast(msg, act) {
   if (act) t.append(h('button', { text: act.label, onclick: () => { t.classList.remove('on'); act.fn(); } }));
   t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), act ? 4500 : 2200);
 }
+$('#toast').addEventListener('click', (ev) => { if (ev.target.tagName !== 'BUTTON') $('#toast').classList.remove('on'); });
 const snap = () => JSON.stringify(S);
 const undo = (msg, s0) => toast(msg, { label: 'Annulla', fn: () => { replaceAll(JSON.parse(s0)); render(); } });
 
 /* ---------- foglio dal basso ---------- */
-function sheet(...kids) { const c = $('.sheet-card'); c.replaceChildren(...kids.filter((k) => k != null && k !== false)); $('#sheet').hidden = false; c.scrollTop = 0; }
-const close = () => { $('#sheet').hidden = true; };
+function sheet(...kids) {
+  const c = $('.sheet-card');
+  c.replaceChildren(h('button', { class: 'sheet-x', 'aria-label': 'Chiudi', onclick: close }, ic('x')), ...kids.filter((k) => k != null && k !== false));
+  c.style.transform = ''; $('#sheet').hidden = false; c.scrollTop = 0;
+}
+const close = () => { $('#sheet').hidden = true; if (document.activeElement) document.activeElement.blur(); };
 $('.sheet-bg').addEventListener('click', close);
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#sheet').hidden) close(); });
+/* Trascina giù il foglio (dalla parte alta) per chiuderlo. */
+(() => {
+  const c = $('.sheet-card'); let y0 = null, dy = 0;
+  c.addEventListener('touchstart', (ev) => { const r = c.getBoundingClientRect(), y = ev.touches[0].clientY; if (c.scrollTop <= 0 && y - r.top < 70) { y0 = y; dy = 0; c.style.transition = 'none'; } }, { passive: true });
+  c.addEventListener('touchmove', (ev) => { if (y0 == null) return; dy = Math.max(0, ev.touches[0].clientY - y0); c.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  c.addEventListener('touchend', () => { if (y0 == null) return; y0 = null; c.style.transition = ''; if (dy > 90) close(); c.style.transform = ''; });
+})();
 const field = (label, input) => h('label', { class: 'f' }, h('span', { text: label }), input);
 
 /* ---------- navigazione ---------- */
@@ -59,25 +73,26 @@ let TAB = location.hash.slice(1) || 'oggi', SUB = 'corpo';
 if (!['oggi', 'scheda', 'progressi'].includes(TAB)) TAB = 'oggi';
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => { TAB = b.dataset.tab; history.replaceState(null, '', '#' + TAB); render(); scrollTo(0, 0); }));
 
+const inCorso = () => !!(S.live && !S.live.pausa);
 /* Orologi della schermata: ogni componente registra il suo aggiornamento. */
 let TICKS = [], tickInt = null;
 const onTick = (fn) => { TICKS.push(fn); fn(); };
 let wl = null;
 async function sveglia() {
   try {
-    if (S.live && !wl && 'wakeLock' in navigator && document.visibilityState === 'visible') { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
-    if (!S.live && wl) { wl.release(); wl = null; }
+    if (inCorso() && !wl && 'wakeLock' in navigator && document.visibilityState === 'visible') { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+    if (!inCorso() && wl) { wl.release(); wl = null; }
   } catch (e) { /* lo schermo può spegnersi */ }
 }
 function render() {
   TICKS = []; clearInterval(tickInt);
-  document.body.classList.toggle('guida', !!(S.live && S.live.vista === 'guida' && TAB === 'oggi'));
+  document.body.classList.toggle('guida', !!(inCorso() && S.live.vista === 'guida' && TAB === 'oggi'));
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === TAB));
   const v = $('#view');
-  if (TAB === 'oggi') S.live ? renderLive(v) : renderOggi(v);
+  if (TAB === 'oggi') inCorso() ? renderLive(v) : renderOggi(v);
   else if (TAB === 'scheda') renderScheda(v);
   else renderProgressi(v);
-  renderRest();
+  renderRest(); renderRiprendi();
   if (TICKS.length) tickInt = setInterval(() => TICKS.forEach((f) => f()), 250);
   sveglia();
 }
@@ -96,7 +111,15 @@ function renderOggi(v) {
   const saltato = S.salti.includes(t);
   const ev = ritmo.palestraIl(t), occ = ritmo.impegniIl(t).length;
 
-  if (!G.length) {
+  const L = S.live;
+  if (L && L.pausa) {
+    const nS = L.esercizi.reduce((a, e) => a + e.serie.length, 0), fS = L.esercizi.reduce((a, e) => a + e.serie.filter((x) => x.ok).length, 0);
+    kids.push(h('div', { class: 'hero' }, h('div', { class: 'k' }, ic('pause'), 'In pausa'), h('div', { class: 'big', text: L.nome }),
+      h('div', { class: 'meta' }, h('span', { class: 'num', text: mmss((L.pausa - L.t0) / 1000) }), h('span', { class: 'num', text: `${fS}/${nS} serie` })),
+      h('div', { class: 'row' }, h('button', { class: 'play', 'aria-label': 'Riprendi allenamento', onclick: riprendi }, ic('play')),
+        h('span', { class: 'ghost-l', text: 'Riprendi' }), h('span', { style: 'flex:1' }),
+        h('button', { class: 'ghost', onclick: finish }, ic('stop'), 'Termina'))));
+  } else if (!G.length) {
     kids.push(h('div', { class: 'hero' }, h('div', { class: 'k' }, 'Oggi'), h('div', { class: 'big', text: 'Giornata libera' }),
       h('div', { class: 'meta' }, 'Crea un allenamento o registra un esercizio')));
   } else if (fatto.length) {
@@ -119,7 +142,7 @@ function renderOggi(v) {
         h('button', { class: 'ghost', 'aria-label': 'Cambia', onclick: () => pickDay() }, ic('swap')))));
   }
 
-  if (!fatto.length) kids.push(h('div', { class: 'tiles' },
+  if (!fatto.length && !L) kids.push(h('div', { class: 'tiles' },
     h('button', { class: 'tile', onclick: addAllenamento }, h('span', { class: 'ico' }, ic('dumb')), h('b', { text: 'Allenamento' }), h('small', { text: 'Avvia un pacchetto' })),
     h('button', { class: 'tile', onclick: addEsercizio }, h('span', { class: 'ico' }, ic('plus')), h('b', { text: 'Esercizio' }), h('small', { text: 'Registra un esercizio' }))));
 
@@ -167,6 +190,7 @@ const volume = (s) => s.esercizi.reduce((a, e) => a + e.serie.filter((x) => x.ok
 /* Avvia: parte un breve conto alla rovescia ("Si parte") e la guida segue l'allenamento serie dopo serie. */
 const PARTENZA = 10;
 function startLive(g) {
+  if (S.live && S.live.pausa) { toast('Prima riprendi o termina l’allenamento in pausa'); TAB = 'oggi'; render(); return; }
   unlockAudio();
   S.live = {
     id: uid('s'), data: today(), giorno: g ? g.id : null, nome: g ? g.nome : 'Libero', t0: Date.now(), vista: 'guida',
@@ -190,7 +214,7 @@ function renderLive(v) {
   onTick(() => { el.textContent = mmss((Date.now() - L.t0) / 1000) + ` · ${L.esercizi.reduce((a, e) => a + e.serie.filter((s) => s.ok).length, 0)} serie`; });
   const kids = [h('div', { class: 'live-top' }, h('div', { class: 't' }, h('b', { text: L.nome }), el),
     h('button', { class: 'ib', 'aria-label': 'Guida', onclick: () => { L.vista = 'guida'; commit(); scrollTo(0, 0); } }, ic('focus')),
-    h('button', { class: 'btn', onclick: finish }, 'Fine'))];
+    h('button', { class: 'btn', onclick: esci }, ic('pause'), 'Esci'))];
   const act = activeEx();
   L.esercizi.forEach((e, ei) => kids.push(exCard(e, ei, e === act)));
   kids.push(h('button', { class: 'add', onclick: addEsercizio }, ic('plus'), 'Esercizio'));
@@ -220,15 +244,34 @@ function activeEx() {
   for (const b of blocchi(L.esercizi)) { const x = passoIn(b); if (x) return x; }
   return null;
 }
-/* Unisce o divide la superserie tra l'esercizio i e il successivo. */
-function legaSS(list, i) {
-  const a = list[i], b = list[i + 1]; if (!b) return;
-  if (a.ss && a.ss === b.ss) { const old = a.ss, nuovo = uid('ss'); for (let k = i + 1; k < list.length && list[k].ss === old; k++) list[k].ss = nuovo; }
-  else { const id = a.ss || uid('ss'), old = b.ss; for (let k = i + 1; k < list.length && (k === i + 1 || (old && list[k].ss === old)); k++) list[k].ss = id; a.ss = id; }
-  list.forEach((e, k) => { if (e.ss && list[k - 1]?.ss !== e.ss && list[k + 1]?.ss !== e.ss) e.ss = null; });
+/* Scelta degli esercizi da mettere in superserie: li rende vicini e li lega. */
+function sceltaSuperserie(list, base, after) {
+  const sel = new Set(base && base.ss ? list.filter((e) => e.ss === base.ss) : base ? [base] : []);
+  const box = h('div', { class: 'list' }), ok = h('button', { class: 'btn wide', style: 'margin-top:14px' });
+  const info = (e) => exInfo(Array.isArray(e.serie) ? { ...e, serie: e.serie.length } : e);
+  function draw() {
+    box.replaceChildren(...list.map((e) => { const on = sel.has(e); return h('button', { class: 'li' + (on ? ' sel' : ''), onclick: () => { if (on) sel.delete(e); else sel.add(e); draw(); } },
+      h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: info(e) })), h('span', { class: 'tick' }, ic('check'))); }));
+    ok.textContent = sel.size >= 2 ? `Crea superserie (${sel.size})` : 'Scegli almeno 2 esercizi';
+    ok.classList.toggle('sec2', sel.size < 2);
+  }
+  ok.addEventListener('click', () => {
+    if (sel.size < 2) return;
+    const scelti = list.filter((e) => sel.has(e)), vecchi = new Set(scelti.map((e) => e.ss).filter(Boolean)), id = uid('ss');
+    list.forEach((e) => { if (vecchi.has(e.ss) && !sel.has(e)) e.ss = null; });
+    const at = list.indexOf(scelti[0]), resto = list.filter((e) => !sel.has(e));
+    scelti.forEach((e) => { e.ss = id; });
+    list.splice(0, list.length, ...resto.filter((e) => list.indexOf(e) < at), ...scelti, ...resto.filter((e) => list.indexOf(e) > at));
+    list.forEach((e, k) => { if (e.ss && list[k - 1]?.ss !== e.ss && list[k + 1]?.ss !== e.ss) e.ss = null; });
+    after(); toast('Superserie creata');
+  });
+  const unita = base && base.ss && list.filter((e) => e.ss === base.ss).length > 1;
+  sheet(h('h2', { text: 'Superserie' }), h('div', { class: 'note', style: 'margin-top:-6px', text: 'Scegli gli esercizi da fare uno dietro l’altro, senza pausa in mezzo. Il recupero arriva a fine giro.' }),
+    box, ok, unita ? h('div', { style: 'text-align:center;margin-top:8px' }, h('button', { class: 'btn danger', onclick: () => { const id = base.ss; list.forEach((e) => { if (e.ss === id) e.ss = null; }); after(); toast('Superserie sciolta'); } }, 'Sciogli superserie')) : null);
+  draw();
 }
 const inSS = (list, k) => !!(list[k].ss && (list[k - 1]?.ss === list[k].ss || list[k + 1]?.ss === list[k].ss));
-const ssBtn = (list, k, after) => (list[k + 1] ? h('button', { class: 'mini' + (list[k].ss && list[k].ss === list[k + 1].ss ? ' on' : ''), onclick: (ev) => { ev.stopPropagation(); legaSS(list, k); after(); } }, ic('link'), list[k].ss && list[k].ss === list[k + 1].ss ? 'Superserie ✓' : 'Superserie') : null);
+const ssBtn = (list, k, after) => (list.length > 1 ? h('button', { class: 'mini' + (inSS(list, k) ? ' on' : ''), onclick: (ev) => { ev.stopPropagation(); sceltaSuperserie(list, list[k], after); } }, ic('link'), inSS(list, k) ? 'Superserie ✓' : 'Superserie') : null);
 /* Testo di una serie secondo il tipo: 62,5×10 · 15 rip · 45 s · 30′ · 5,2 km */
 function setTxt(e, x) {
   const t = P.tipoDi(e), n = (k) => num(x[k]) ?? 0;
@@ -332,7 +375,7 @@ function riepilogoEs(e) {
   return out;
 }
 function exCard(e, ei, active) {
-  const ssb = ssBtn(S.live.esercizi, ei, commit), ssc = inSS(S.live.esercizi, ei) ? ' ss' : '';
+  const ssb = ssBtn(S.live.esercizi, ei, () => { close(); commit(); }), ssc = inSS(S.live.esercizi, ei) ? ' ss' : '';
   const done = isDone(e), cur = e.serie.findIndex((x) => !x.ok), fatte = e.serie.filter((x) => x.ok).length;
   const u = P.ultima(e), last = u ? u.serie.filter((x) => x.ok).map((x) => setTxt(e, x)).join(' · ') : null;
   const chips = e.serie.map((x, i) => (x.ok ? chip(e, i) : null)).filter(Boolean);
@@ -399,7 +442,7 @@ function renderGuida(v) {
   onTick(() => { el.textContent = `${mmss((Date.now() - L.t0) / 1000)} · ${fatte}/${tot} serie`; });
   const head = h('div', { class: 'live-top' }, h('div', { class: 't' }, h('b', { text: L.nome }), el),
     h('button', { class: 'ib', 'aria-label': 'Elenco', onclick: () => { L.vista = 'lista'; commit(); } }, ic('list')),
-    h('button', { class: 'btn', onclick: finish }, 'Fine'));
+    h('button', { class: 'btn', onclick: esci }, ic('pause'), 'Esci'));
   const bar = h('div', { class: 'gbar' }, h('i', { style: `width:${tot ? (fatte / tot) * 100 : 0}%` }));
   let body;
   if (R && R.fine > Date.now()) body = guidaRiposo(e, R);
@@ -425,6 +468,7 @@ function guidaLavoro(e) {
     h('div', { class: 'glinks' },
       h('button', { class: 'mini', onclick: () => { const nx = L.esercizi.find((y) => !blk.includes(y) && !isDone(y) && L.esercizi.indexOf(y) > idx) || L.esercizi.find((y) => !blk.includes(y) && !isDone(y)); if (nx) { L.focus = nx.id; commit(); } else toast('È l’ultimo esercizio'); } }, ic('skip'), 'Salta'),
       h('button', { class: 'mini', onclick: elencoEsercizi }, ic('list'), 'Esercizi'),
+      L.esercizi.length > 1 ? h('button', { class: 'mini' + (blk.length > 1 ? ' on' : ''), onclick: () => sceltaSuperserie(L.esercizi, e, () => { close(); commit(); }) }, ic('link'), 'Superserie') : null,
       h('button', { class: 'mini', onclick: addEsercizio }, ic('plus'), 'Aggiungi')));
 }
 function guidaRiposo(e, R) {
@@ -550,6 +594,7 @@ function nuovoEsercizio(nome, cb) {
 function addEsercizio() {
   pickEsercizio({ titolo: 'Esercizio', onPick: (e) => {
     close();
+    if (S.live && S.live.pausa) { toast('Prima riprendi o termina l’allenamento in pausa'); return; }
     if (!S.live) S.live = { id: uid('s'), data: today(), giorno: null, nome: 'Libero', t0: Date.now(), riposo: null, vista: 'guida', esercizi: [] };
     const x = liveEx(e); S.live.esercizi.push(x); S.live.focus = x.id; TAB = 'oggi'; commit();
     setTimeout(() => scrollTo(0, document.body.scrollHeight), 60);
@@ -580,8 +625,8 @@ function builder(b) {
   const vuoto = () => { if (b.esercizi.length) return false; toast('Aggiungi almeno un esercizio'); return true; };
   sheet(h('h2', { text: 'Nuovo allenamento' }), field('Nome', nome),
     b.esercizi.length ? h('div', { class: 'list' }, b.esercizi.map((e, i) => h('div', { class: 'li' + (inSS(b.esercizi, i) ? ' ss' : '') }, h('div', { class: 't' }, h('b', { text: e.nome }), h('small', { class: 'num', text: exInfo(e) })),
-      ssBtn(b.esercizi, i, () => builder(b)),
       h('button', { class: 'mini', 'aria-label': 'Togli', onclick: () => { b.esercizi.splice(i, 1); builder(b); } }, ic('x'))))) : null,
+    b.esercizi.length > 1 ? h('button', { class: 'add', style: 'color:var(--amb)', onclick: () => sceltaSuperserie(b.esercizi, null, () => builder(b)) }, ic('link'), 'Superserie') : null,
     h('button', { class: 'add', onclick: () => pickEsercizio({ titolo: 'Esercizi', multi: true, gia: b.esercizi.map((e) => e.nome), onPick: (arr) => {
       const prima = b.esercizi.filter((e) => arr.some((a) => norm(a.nome) === norm(e.nome)));
       b.esercizi = [...prima, ...arr.filter((a) => !prima.some((e) => norm(e.nome) === norm(a.nome))).map((a) => ({ ...a, ss: null }))]; builder(b);
@@ -593,8 +638,8 @@ function builder(b) {
 function finish() {
   const L = S.live, fatte = L.esercizi.reduce((a, e) => a + e.serie.filter((x) => x.ok).length, 0);
   if (!fatte) { if (confirm('Nessuna serie segnata. Chiudo senza salvare?')) { S.live = null; commit(); } return; }
-  const s = { ...L, t1: Date.now(), esercizi: L.esercizi.map((e) => ({ ...e, serie: e.serie.filter((x) => x.ok) })).filter((e) => e.serie.length) };
-  delete s.riposo; delete s.fb; delete s.focus; delete s.vista; delete s.cron;
+  const s = { ...L, t1: L.pausa || Date.now(), esercizi: L.esercizi.map((e) => ({ ...e, serie: e.serie.filter((x) => x.ok) })).filter((e) => e.serie.length) };
+  delete s.riposo; delete s.fb; delete s.focus; delete s.vista; delete s.cron; delete s.pausa;
   if (!s.giorno) { const n = s.esercizi.map((e) => e.nome); s.nome = n.slice(0, 2).join(' · ') + (n.length > 2 ? ` +${n.length - 2}` : ''); }
   // confronti calcolati prima di salvare, contro gli allenamenti precedenti
   const prec = s.giorno ? [...S.sessioni].reverse().find((x) => x.giorno === s.giorno) : null;
@@ -611,6 +656,27 @@ function finish() {
     ...blocchi,
     h('div', { class: 'acts' }, h('button', { class: 'btn wide', onclick: close }, 'Fatto')));
 }
+/* Uscire dall'allenamento: pausa (si riprende dopo) o termina (salva e riepilogo). */
+function esci() {
+  sheet(h('h2', { text: 'Esci dall’allenamento' }),
+    h('div', { class: 'list' },
+      h('button', { class: 'li', onclick: () => { close(); pausa(); } }, h('span', { class: 'badge' }, ic('pause')), h('div', { class: 't' }, h('b', { text: 'Pausa' }), h('small', { text: 'Esci e riprendi quando vuoi' }))),
+      h('button', { class: 'li', onclick: () => { close(); finish(); } }, h('span', { class: 'badge acc' }, ic('stop')), h('div', { class: 't' }, h('b', { text: 'Termina allenamento' }), h('small', { text: 'Salva e vedi il riepilogo' })))),
+    h('div', { style: 'text-align:center;margin-top:14px' }, h('button', { class: 'btn danger', onclick: () => { close(); discard(); } }, 'Annulla senza salvare')));
+}
+function pausa() {
+  const L = S.live; L.pausa = Date.now(); L.riposo = null; N.annulla();
+  if (L.cron) { const e = L.esercizi.find((x) => x.id === L.cron.ex); if (e) { const x = e.serie[L.cron.i], sec = (Date.now() - L.cron.t0) / 1000; if (P.tipoDi(e) === 'tempo') x.sec = Math.round(sec); else x.min = Math.round((sec / 60) * 10) / 10; } L.cron = null; }
+  commit(); toast('Allenamento in pausa');
+}
+function riprendi() { const L = S.live; if (!L || !L.pausa) return; L.t0 += Date.now() - L.pausa; L.pausa = null; TAB = 'oggi'; history.replaceState(null, '', '#oggi'); commit(); scrollTo(0, 0); }
+/* Barra «Riprendi allenamento» sulle altre schermate quando l'allenamento è in pausa. */
+function renderRiprendi() {
+  const b = $('#resume'), L = S.live;
+  if (!L || !L.pausa || TAB === 'oggi') { b.hidden = true; return; }
+  b.hidden = false;
+  b.replaceChildren(ic('pause'), h('div', { class: 't' }, h('b', { text: L.nome }), h('small', { text: 'In pausa' })), h('button', { class: 'btn', onclick: riprendi }, ic('play'), 'Riprendi'));
+}
 function discard() { if (!confirm('Annullo l’allenamento in corso?')) return; S.live = null; N.annulla(); commit(); }
 
 /* ---------- recupero ---------- */
@@ -624,7 +690,7 @@ function beep() {
 function renderRest() {
   const box = $('#rest'), R = S.live && S.live.riposo;
   clearInterval(restInt);
-  if (!R || (S.live.vista === 'guida' && TAB === 'oggi')) { box.hidden = true; return; }
+  if (!R || S.live.pausa || (S.live.vista === 'guida' && TAB === 'oggi')) { box.hidden = true; return; }
   box.hidden = false; box.classList.remove('fine');
   const tm = h('div', { class: 'tm num' }), bar = h('i');
   box.replaceChildren(h('div', { class: 'bar' }, bar), ic('clock'), tm,
@@ -666,6 +732,7 @@ function renderScheda(v) {
         i === nx ? h('span', { class: 'chip acc' }, 'Prossimo') : null, ic('edit')),
       h('div', { class: 'exl' }, g.esercizi.map((e, k) => h('button', { class: inSS(g.esercizi, k) ? 'ss' : '', onclick: () => editEx(g, e) },
         h('span', {}, inSS(g.esercizi, k) ? ic('link') : null, e.nome), h('small', { class: 'num', text: exInfo(e) }))),
+        g.esercizi.length > 1 ? h('button', { onclick: () => sceltaSuperserie(g.esercizi, null, () => { close(); commit(); }), style: 'color:var(--amb);font-weight:600;justify-content:flex-start;gap:6px' }, ic('link'), 'Superserie') : null,
         h('button', { onclick: () => pickEsercizio({ titolo: 'Esercizio', onPick: (e) => { g.esercizi.push({ id: uid('e'), nome: e.nome, tipo: P.tipoDi(e), serie: e.serie, reps: e.reps, rec: e.rec, passo: e.passo, note: e.note || '' }); commit(); close(); } }), style: 'color:var(--acc);font-weight:600;justify-content:flex-start;gap:6px' }, ic('plus'), 'Esercizio'))));
   });
   if (!S.scheda.giorni.length) kids.push(h('div', { class: 'empty' }, ic('cal'), h('div', { text: 'Ancora nessun giorno' })));
